@@ -1,13 +1,19 @@
 'use client'
 
-import { useState, useRef, useMemo } from 'react'
-import type { Housemate } from '../lib/notion'
+import { useState, useRef, useMemo, useCallback } from 'react'
+import type { Housemate, Happening } from '../lib/notion'
+import { useDialog } from '@/lib/providers/dialog-provider'
+import { ContentViewer, type ViewableItem } from './ContentViewer'
+import { LinkViewer } from './LinkViewer'
 
 // ── Content types ──────────────────────────────────────────────────────────────
 
 type LeafItem =
   | { id: number; type: 'image'; label: string; color: string }
-  | { id: number; type: 'article'; label: string; preview: string }
+  | { id: number; type: 'article'; label: string; preview: string; imageUrl?: string | null }
+  | { id: number; type: 'link'; label: string; url: string; ogImage?: string | null }
+
+type ViewableLeaf = Extract<LeafItem, { type: 'image' | 'article' }>
 
 type ContentItem =
   | LeafItem
@@ -15,20 +21,12 @@ type ContentItem =
 
 const FOLDERS: { id: number; label: string; contents: ContentItem[] }[] = [
   {
-    id: 1, label: 'People',
+    id: 1, label: 'PEOPLE',
     contents: [
-      { id: 1, type: 'image', label: 'team.jpg', color: '#6baed6' },
-      { id: 2, type: 'article', label: 'Org Chart', preview: 'Reporting structure and team roles.' },
-      {
-        id: 3, type: 'folder', label: 'Contacts', contents: [
-          { id: 1, type: 'article', label: 'Directory', preview: 'Full staff contact list.' },
-          { id: 2, type: 'image', label: 'badges.jpg', color: '#a1d99b' },
-        ]
-      },
     ],
   },
   {
-    id: 2, label: 'Happenings',
+    id: 2, label: 'HAPPENINGS',
     contents: [
       { id: 1, type: 'article', label: 'Q2 Update', preview: 'Latest project milestones and blockers.' },
       { id: 2, type: 'image', label: 'event.png', color: '#fd8d3c' },
@@ -42,7 +40,7 @@ const FOLDERS: { id: number; label: string; contents: ContentItem[] }[] = [
     ],
   },
   {
-    id: 3, label: 'Pictures',
+    id: 3, label: 'PICTURES',
     contents: [
       { id: 1, type: 'image', label: 'site_a.jpg', color: '#74c476' },
       { id: 2, type: 'image', label: 'site_b.jpg', color: '#9e9ac8' },
@@ -52,12 +50,41 @@ const FOLDERS: { id: number; label: string; contents: ContentItem[] }[] = [
 ]
 
 const INITIAL_POSITIONS = [
-  { x: 80, y: 100 },
-  { x: 320, y: 60 },
-  { x: 80, y: 360 },
+  { x: 250, y: 200 },
+  { x: 420, y: 200 },
+  { x: 250, y: 360 },
 ]
 
-// ── Scatter offsets ────────────────────────────────────────────────────────────
+// ── Dialog helpers ─────────────────────────────────────────────────────────────
+
+function toViewable(items: ViewableLeaf[]): ViewableItem[] {
+  return items.map(item => ({
+    id: item.id,
+    type: item.type,
+    label: item.label,
+    preview: item.type === 'article' ? item.preview : undefined,
+    color: item.type === 'image' ? item.color : undefined,
+    imageUrl: item.type === 'article' ? item.imageUrl : undefined,
+  }))
+}
+
+const DIALOG_OPTS = { options: { className: 'bg-[#FFFDF1]' } }
+
+function useOpenContent() {
+  const { dialog } = useDialog()
+  return useCallback((items: ViewableLeaf[], startIndex: number) => {
+    dialog(<ContentViewer items={toViewable(items)} startIndex={startIndex} />, DIALOG_OPTS)
+  }, [dialog])
+}
+
+function useOpenLink() {
+  const { dialog } = useDialog()
+  return useCallback((url: string, label: string, ogImage?: string | null) => {
+    dialog(<LinkViewer url={url} label={label} ogImage={ogImage} />, DIALOG_OPTS)
+  }, [dialog])
+}
+
+// ── Item offsets ───────────────────────────────────────────────────────────────
 
 function getScatterOffsets(count: number, dist: number) {
   return Array.from({ length: count }, (_, i) => {
@@ -66,6 +93,21 @@ function getScatterOffsets(count: number, dist: number) {
     const angle = startAngle + (i / Math.max(count - 1, 1)) * sweep
     return { x: Math.cos(angle) * (dist + (i % 2) * 18), y: Math.sin(angle) * (dist + (i % 2) * 18) }
   })
+}
+
+const GRID_COLS = 4
+const GRID_COL_W = 88
+const GRID_ROW_H = 80
+
+function getGridOffsets(count: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    x: 16 + (i % GRID_COLS) * GRID_COL_W,
+    y: 16 + (Math.floor(i / GRID_COLS) + 1) * GRID_ROW_H,
+  }))
+}
+
+function getOffsets(count: number, scatterDist: number) {
+  return count > 5 ? getGridOffsets(count) : getScatterOffsets(count, scatterDist)
 }
 
 // ── Folder SVG layers ──────────────────────────────────────────────────────────
@@ -107,20 +149,21 @@ function FolderFront({ open, scale = 1 }: { open: boolean; scale?: number }) {
 
 function ImageCard({ item }: { item: Extract<ContentItem, { type: 'image' }> }) {
   return (
-    <div style={{
-      width: 68, height: 56, borderRadius: 7,
-      background: item.color,
-      boxShadow: '0 3px 12px rgba(0,0,0,0.3)',
-      display: 'flex', alignItems: 'flex-end', padding: '5px 7px',
-    }}>
-      <span style={{
-        color: 'rgba(255,255,255,0.92)', fontSize: '0.52rem', fontWeight: 700,
-        textShadow: '0 1px 3px rgba(0,0,0,0.5)',
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%',
-      }}>
-        {item.label}
-      </span>
-    </div>
+    <>
+      <div style={{
+        width: 76, height: 62, borderRadius: 10,
+        background: item.color,
+        boxShadow: '0 4px 16px rgba(0,0,0,0.22)',
+      }} />
+      <aside style={{ width: 76, overflow: 'hidden', paddingInline: 4, marginTop: '.35rem' }}>
+        <span style={{ textAlign: "right",
+          display: 'block', color: 'white', fontSize: '0.6rem', fontWeight: 500,
+          textShadow: '0 1px 3px rgba(0,0,0,0.8)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>
+          {item.label}
+        </span>
+      </aside>
+    </>
   )
 }
 
@@ -131,21 +174,55 @@ function ArticleCard({ item }: { item: Extract<ContentItem, { type: 'article' }>
         width: 76, height: 62, borderRadius: 10,
         background: 'rgba(255,255,255,0.96)',
         boxShadow: '0 4px 16px rgba(0,0,0,0.22)',
-        padding: '10px 10px 8px',
-        display: 'flex', flexDirection: 'column', gap: 5,
+        overflow: 'hidden',
+        position: 'relative',
       }}>
-        <div style={{ height: 6, borderRadius: 3, background: '#c4c4c4', width: '88%' }} />
-        <div style={{ height: 5, borderRadius: 3, background: '#dedede', width: '72%' }} />
-        <div style={{ height: 5, borderRadius: 3, background: '#dedede', width: '82%' }} />
-        <div style={{ height: 5, borderRadius: 3, background: '#ebebeb', width: '58%' }} />
+        {item.imageUrl ? (
+          <img
+            src={item.imageUrl}
+            alt={item.label}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+        ) : (
+          <div style={{ padding: '10px 10px 8px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <div style={{ height: 6, borderRadius: 3, background: '#c4c4c4', width: '88%' }} />
+            <div style={{ height: 5, borderRadius: 3, background: '#dedede', width: '72%' }} />
+            <div style={{ height: 5, borderRadius: 3, background: '#dedede', width: '82%' }} />
+            <div style={{ height: 5, borderRadius: 3, background: '#ebebeb', width: '58%' }} />
+          </div>
+        )}
       </div>
-      <aside>
+      <aside style={{ width: 76, overflow: 'hidden', paddingInline: 4, marginTop: '.35rem' }}>
         <span style={{
-          color: 'rgba(0,0,0,0.7)', fontSize: '0.6rem', fontWeight: 500,
-          textShadow: '0 1px 3px rgba(255,255,255,0.8)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%',
+          textAlign: "right",
+          display: 'block', color: 'white', fontSize: '0.6rem', fontWeight: 500,
+          textShadow: '0 1px 3px rgba(0,0,0,0.8)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>
           {item?.label}
         </span>
+      </aside>
+    </>
+  )
+}
+
+function LinkCard({ item }: { item: Extract<LeafItem, { type: 'link' }> }) {
+  const ogSrc = item.ogImage ?? `/api/og?url=${encodeURIComponent(item.url)}`
+  return (
+    <>
+      <div style={{
+        width: 76, height: 62, borderRadius: 10,
+        background: 'rgba(255,255,255,0.96)',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.22)',
+        overflow: 'hidden',
+      }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={ogSrc} alt={item.label} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+      </div>
+      <aside style={{ width: 76, overflow: 'hidden', paddingInline: 4, marginTop: '.35rem' }}>
+        <span style={{
+          display: 'block', color: 'white', fontSize: '0.6rem', fontWeight: 500,
+          textShadow: '0 1px 3px rgba(0,0,0,0.8)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>{item.label}</span>
       </aside>
     </>
   )
@@ -158,14 +235,17 @@ const MINI_W = 72 * MINI_SCALE
 const MINI_H = 62 * MINI_SCALE
 
 function MiniFolder({ item }: { item: Extract<ContentItem, { type: 'folder' }> }) {
-  const [open,       setOpen]       = useState(false)
-  const [visible,    setVisible]    = useState(false)
+  const [open, setOpen] = useState(false)
+  const [visible, setVisible] = useState(false)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
-  const drag  = useRef<{ ox: number; oy: number } | null>(null)
+  const drag = useRef<{ ox: number; oy: number } | null>(null)
   const moved = useRef(false)
+  const openContent = useOpenContent()
 
+  const openLink = useOpenLink()
   const contents = item.contents ?? []
-  const offsets = useMemo(() => getScatterOffsets(contents.length, 75), [contents.length])
+  const viewableItems = useMemo(() => contents.filter((c): c is ViewableLeaf => c.type === 'image' || c.type === 'article'), [contents])
+  const offsets = useMemo(() => getOffsets(contents.length, 75), [contents.length])
   const cx = MINI_W / 2
   const cy = MINI_H / 2
 
@@ -188,27 +268,37 @@ function MiniFolder({ item }: { item: Extract<ContentItem, { type: 'folder' }> }
     }}>
 
       {/* Sub-items scatter */}
-      {open && contents.map((sub, i) => (
-        <div
-          key={sub.id}
-          style={{
-            position: 'absolute',
-            left: cx, top: cy,
-            transform: visible
-              ? `translate(calc(${offsets[i].x}px - 50%), calc(${offsets[i].y}px - 50%))`
-              : `translate(-50%, -50%) scale(0.3)`,
-            opacity: visible ? 1 : 0,
-            transition: [
-              `transform 0.4s cubic-bezier(0.34, 1.5, 0.64, 1) ${i * 60}ms`,
-              `opacity   0.28s ease                             ${i * 60}ms`,
-            ].join(', '),
-            pointerEvents: 'auto',
-            zIndex: 10,
-          }}
-        >
-          {sub.type === 'image' ? <ImageCard item={sub} /> : <ArticleCard item={sub} />}
-        </div>
-      ))}
+      {open && contents.map((sub, i) => {
+        const isLeaf = true // sub is always a LeafItem inside a MiniFolder
+        const isLink = sub.type === 'link'
+        const viewableIdx = isLeaf && !isLink ? viewableItems.indexOf(sub as ViewableLeaf) : -1
+        const handleClick = !isLeaf ? undefined
+          : isLink ? () => { const l = sub as Extract<LeafItem, { type: 'link' }>; openLink(l.url, l.label, l.ogImage) }
+            : () => openContent(viewableItems, viewableIdx)
+        return (
+          <div
+            key={sub.id}
+            style={{
+              position: 'absolute',
+              left: cx, top: cy,
+              transform: visible
+                ? `translate(calc(${offsets[i].x}px - 50%), calc(${offsets[i].y}px - 50%))`
+                : `translate(-50%, -50%) scale(0.3)`,
+              opacity: visible ? 1 : 0,
+              transition: [
+                `transform 0.4s cubic-bezier(0.34, 1.5, 0.64, 1) ${i * 60}ms`,
+                `opacity   0.28s ease                             ${i * 60}ms`,
+              ].join(', '),
+              pointerEvents: 'auto',
+              zIndex: 10,
+              cursor: isLeaf ? 'pointer' : 'default',
+            }}
+            onClick={handleClick}
+          >
+            <ItemCard item={sub} />
+          </div>
+        )
+      })}
 
       {/* Folder icon */}
       <div
@@ -247,8 +337,9 @@ function MiniFolder({ item }: { item: Extract<ContentItem, { type: 'folder' }> }
       </div>
 
       <div style={{ textAlign: 'center', marginTop: 3 }}>
-        <span style={{
-          color: 'white', fontSize: '0.6rem', fontWeight: 500,
+        <span className="font-ivy-display" style={{
+          letterSpacing: '0.05em',
+          color: 'white', fontSize: '0.9rem', fontWeight: 400,
           textShadow: '0 1px 4px rgba(0,0,0,0.8)', whiteSpace: 'nowrap',
         }}>
           {item.label}
@@ -261,9 +352,9 @@ function MiniFolder({ item }: { item: Extract<ContentItem, { type: 'folder' }> }
 // ── Item card dispatcher ───────────────────────────────────────────────────────
 
 function ItemCard({ item }: { item: ContentItem }) {
-  console.log('item', item);
   if (item.type === 'folder') return <MiniFolder item={item} />
   if (item.type === 'image') return <ImageCard item={item} />
+  if (item.type === 'link') return <LinkCard item={item} />
   return <ArticleCard item={item} />
 }
 
@@ -284,8 +375,11 @@ function Folder({ label, initialX, initialY, contents }: FolderProps) {
   const [visible, setVisible] = useState(false)
   const drag = useRef<{ ox: number; oy: number } | null>(null)
   const moved = useRef(false)
+  const openContent = useOpenContent()
 
-  const offsets = useMemo(() => getScatterOffsets(contents.length, 105), [contents.length])
+  const openLink = useOpenLink()
+  const viewableItems = useMemo(() => contents.filter((c): c is ViewableLeaf => c.type === 'image' || c.type === 'article'), [contents])
+  const offsets = useMemo(() => getOffsets(contents.length, 105), [contents.length])
   const cx = W / 2, cy = H / 2
 
   const toggleOpen = () => {
@@ -302,26 +396,36 @@ function Folder({ label, initialX, initialY, contents }: FolderProps) {
     <div style={{ position: 'absolute', left: pos.x, top: pos.y, userSelect: 'none' }}>
 
       {/* Scattered items */}
-      {open && contents.map((item, i) => (
-        <div
-          key={item.id}
-          style={{
-            position: 'absolute',
-            left: cx, top: cy,
-            transform: visible
-              ? `translate(calc(${offsets[i].x}px - 50%), calc(${offsets[i].y}px - 50%))`
-              : `translate(-50%, -50%) scale(0.35)`,
-            opacity: visible ? 1 : 0,
-            transition: [
-              `transform 0.44s cubic-bezier(0.34, 1.5, 0.64, 1) ${i * 60}ms`,
-              `opacity   0.3s  ease                              ${i * 60}ms`,
-            ].join(', '),
-            pointerEvents: 'auto',
-          }}
-        >
-          <ItemCard item={item} />
-        </div>
-      ))}
+      {open && contents.map((item, i) => {
+        const isLeaf = item.type !== 'folder'
+        const isLink = item.type === 'link'
+        const viewableIdx = isLeaf && !isLink ? viewableItems.indexOf(item as ViewableLeaf) : -1
+        const handleClick = !isLeaf ? undefined
+          : isLink ? () => { const l = item as Extract<LeafItem, { type: 'link' }>; openLink(l.url, l.label, l.ogImage) }
+            : () => openContent(viewableItems, viewableIdx)
+        return (
+          <div
+            key={item.id}
+            style={{
+              position: 'absolute',
+              left: cx, top: cy,
+              transform: visible
+                ? `translate(calc(${offsets[i].x}px - 50%), calc(${offsets[i].y}px - 50%))`
+                : `translate(-50%, -50%) scale(0.35)`,
+              opacity: visible ? 1 : 0,
+              transition: [
+                `transform 0.44s cubic-bezier(0.34, 1.5, 0.64, 1) ${i * 60}ms`,
+                `opacity   0.3s  ease                              ${i * 60}ms`,
+              ].join(', '),
+              pointerEvents: 'auto',
+              cursor: isLeaf ? 'pointer' : 'default',
+            }}
+            onClick={handleClick}
+          >
+            <ItemCard item={item} />
+          </div>
+        )
+      })}
 
       {/* Folder icon */}
       <div
@@ -356,9 +460,9 @@ function Folder({ label, initialX, initialY, contents }: FolderProps) {
         <div style={{ position: 'absolute', inset: 0 }}><FolderFront open={open} /></div>
       </div>
 
-      <div style={{ textAlign: 'center', marginTop: 5 }}>
-        <span style={{
-          color: 'white', fontSize: '0.8rem', fontWeight: 600,
+      <div style={{ textAlign: 'center' }}>
+        <span className="font-ivy-display" style={{
+          color: 'white', fontSize: '1rem', fontWeight: 300,
           letterSpacing: '0.02em', textShadow: '0 1px 5px rgba(0,0,0,0.75)',
         }}>
           {label}
@@ -368,22 +472,78 @@ function Folder({ label, initialX, initialY, contents }: FolderProps) {
   )
 }
 
+// ── Loose items ────────────────────────────────────────────────────────────────
+
+const LOOSE_ITEMS: { item: ViewableLeaf; x: number; y: number }[] = [
+  { item: { id: 100, type: 'article', label: 'turby.md', preview: 'A few things that keep things running smoothly for everyone.' }, x: 1200, y: 800 },
+  { item: { id: 101, type: 'image', label: 'living room', color: '#b5c4b1' }, x: 450, y: 800 },
+  { item: { id: 102, type: 'image', label: 'garden', color: '#c9b99a' }, x: 550, y: 800 },
+  { item: { id: 103, type: 'image', label: 'kitchen', color: '#a8bfd8' }, x: 350, y: 800 },
+]
+
+function StandaloneLeaf({ item, initialX, initialY, onOpen }: {
+  item: ViewableLeaf
+  initialX: number
+  initialY: number
+  onOpen: () => void
+}) {
+  const [pos, setPos] = useState({ x: initialX, y: initialY })
+  const drag = useRef<{ ox: number; oy: number } | null>(null)
+  const moved = useRef(false)
+
+  return (
+    <div
+      style={{ position: 'absolute', left: pos.x, top: pos.y, userSelect: 'none', cursor: 'grab', pointerEvents: 'auto' }}
+      onPointerDown={(e) => {
+        moved.current = false
+        drag.current = { ox: e.clientX - pos.x, oy: e.clientY - pos.y }
+        e.currentTarget.setPointerCapture(e.pointerId)
+        e.currentTarget.style.cursor = 'grabbing'
+      }}
+      onPointerMove={(e) => {
+        if (!drag.current) return
+        moved.current = true
+        setPos({ x: e.clientX - drag.current.ox, y: e.clientY - drag.current.oy })
+      }}
+      onPointerUp={(e) => {
+        drag.current = null
+        e.currentTarget.style.cursor = 'grab'
+      }}
+      onClick={() => { if (!moved.current) onOpen() }}
+    >
+      <ItemCard item={item} />
+    </div>
+  )
+}
+
 // ── Export ─────────────────────────────────────────────────────────────────────
 
-export function Folders({ housemates }: { housemates: Housemate[] }) {
-  // Merge Notion housemates into the People folder's contents
+export function Folders({ housemates, happenings }: { housemates: Housemate[]; happenings: Happening[] }) {
+  const openContent = useOpenContent()
+  const looseViewable = useMemo(() => LOOSE_ITEMS.map(l => l.item), [])
 
-  console.log('housemates', housemates);
   const folders = useMemo(() => FOLDERS.map(f => {
-    if (f.label !== 'People') return f
-    const hmItems: ContentItem[] = housemates.map((h, i) => ({
-      id: -(i + 1),   // negative to avoid colliding with static ids
-      type: 'article' as const,
-      label: h.name,
-      preview: h.about,
-    }))
-    return { ...f, contents: [...hmItems, ...f.contents] }
-  }), [housemates])
+    if (f.label === 'PEOPLE') {
+      const hmItems: ContentItem[] = housemates.map((h, i) => ({
+        id: -(i + 1),
+        type: 'article' as const,
+        label: h.name,
+        preview: h.about,
+        imageUrl: h.imageUrl,
+      }))
+      return { ...f, contents: [...hmItems, ...f.contents] }
+    }
+    if (f.label === 'HAPPENINGS') {
+      const hItems: ContentItem[] = happenings.map((h, i) => ({
+        id: -(i + 1),
+        type: 'link' as const,
+        label: h.label,
+        url: h.url,
+      }))
+      return { ...f, contents: [...hItems, ...f.contents] }
+    }
+    return f
+  }), [housemates, happenings])
 
   return (
     <>
@@ -394,6 +554,15 @@ export function Folders({ housemates }: { housemates: Housemate[] }) {
           contents={f.contents}
           initialX={INITIAL_POSITIONS[i].x}
           initialY={INITIAL_POSITIONS[i].y}
+        />
+      ))}
+      {LOOSE_ITEMS.map(({ item, x, y }) => (
+        <StandaloneLeaf
+          key={item.id}
+          item={item}
+          initialX={x}
+          initialY={y}
+          onOpen={() => openContent(looseViewable, looseViewable.indexOf(item))}
         />
       ))}
     </>

@@ -33,33 +33,72 @@ function seededRand(seed: number) {
 
 function Blade() {
   const shape = useMemo(() => {
+    // Derived from bladeShape.svg (viewBox 0 0 74 272)
+    // Transform: x_3d = (svg_x - xo) * sc,  y_3d = (272 - svg_y) * sc
+    // xo = midpoint of root base (3.516+27.516)/2 = 15.516 — centers root on the hub axle
+    // sc = 4/272 so the blade tip sits ~4 units from hub
+    const sc = 4 / 272
+    const xo = 15.516
+
     const s = new THREE.Shape()
-    s.moveTo(0.22, -0.08)
-    s.lineTo(0.28, 0.28)
-    s.lineTo(0.11, 0.68)
-    s.bezierCurveTo(0.04, 1.55, -0.50, 2.85, -1.26, 3.72)
-    s.quadraticCurveTo(-1.38, 3.90, -1.32, 3.96)
-    s.bezierCurveTo(-1.14, 3.92, -0.38, 2.85, -0.06, 1.55)
-    s.lineTo(-0.07, 0.68)
-    s.lineTo(-0.18, 0.28)
-    s.lineTo(-0.16, -0.08)
+    // Root — left side
+    s.moveTo((3.516 - xo) * sc,  (272 - 267)   * sc)
+    // Root base
+    s.lineTo((27.516 - xo) * sc, (272 - 270.5) * sc)
+    s.lineTo((27.516 - xo) * sc, (272 - 266)   * sc)
+    s.lineTo((29.516 - xo) * sc, (272 - 262.5) * sc)
+    s.lineTo((31.016 - xo) * sc, (272 - 258.5) * sc)
+    s.lineTo((37.516 - xo) * sc, (272 - 251)   * sc)
+    s.lineTo((41.516 - xo) * sc, (272 - 245)   * sc)
+    // Leading edge sweeps outward
+    s.lineTo((53.016 - xo) * sc, (272 - 190.5) * sc)
+    s.lineTo((66.016 - xo) * sc, (272 - 133.5) * sc)
+    s.lineTo((70.516 - xo) * sc, (272 - 112)   * sc)
+    s.lineTo((73.016 - xo) * sc, (272 - 85.5)  * sc)
+    s.lineTo((73.016 - xo) * sc, (272 - 66)    * sc)
+    // Leading edge narrows toward tip
+    s.lineTo((71.516 - xo) * sc, (272 - 51.5)  * sc)
+    s.lineTo((67.516 - xo) * sc, (272 - 36)    * sc)
+    s.lineTo((59.016 - xo) * sc, (272 - 18.5)  * sc)
+    s.lineTo((50.016 - xo) * sc, (272 - 6)     * sc)
+    s.lineTo((43.516 - xo) * sc, (272 - 0.5)   * sc)
+    // Tip
+    s.lineTo((35.516 - xo) * sc, (272 - 0.5)   * sc)
+    // Trailing edge sweeps back down
+    s.lineTo((46.016 - xo) * sc, (272 - 14)    * sc)
+    s.lineTo((52.516 - xo) * sc, (272 - 26)    * sc)
+    s.lineTo((52.516 - xo) * sc, (272 - 56.5)  * sc)
+    s.lineTo((52.516 - xo) * sc, (272 - 78.5)  * sc)
+    s.lineTo((51.516 - xo) * sc, (272 - 106.5) * sc)
+    s.lineTo((42.516 - xo) * sc, (272 - 136.5) * sc)
+    s.lineTo((29.516 - xo) * sc, (272 - 169.5) * sc)
+    s.lineTo((16.516 - xo) * sc, (272 - 199.5) * sc)
+    s.lineTo((2.516  - xo) * sc, (272 - 228.5) * sc)
+    s.lineTo((0.516  - xo) * sc, (272 - 232.5) * sc)
+    s.lineTo((1.516  - xo) * sc, (272 - 240)   * sc)
+    s.lineTo((2.516  - xo) * sc, (272 - 243.5) * sc)
+    s.lineTo((5.016  - xo) * sc, (272 - 249)   * sc)
+    s.lineTo((5.016  - xo) * sc, (272 - 254)   * sc)
+    s.lineTo((5.016  - xo) * sc, (272 - 261)   * sc)
+    // Back to root
+    s.lineTo((3.516  - xo) * sc, (272 - 267)   * sc)
     s.closePath()
     return s
   }, [])
 
   const extrudeSettings = useMemo(
     () => ({
-      depth: 0.04,
+      depth: 0.06,
       bevelEnabled: true,
-      bevelThickness: 0.01,
-      bevelSize: 0.01,
-      bevelSegments: 2,
+      bevelThickness: 0.015,
+      bevelSize: 0.015,
+      bevelSegments: 3,
     }),
     []
   )
 
   return (
-    <mesh castShadow position={[0, 0, -0.02]}>
+    <mesh castShadow position={[0, 0, -0.03]}>
       <extrudeGeometry args={[shape, extrudeSettings]} />
       <meshStandardMaterial color="#e2e6ea" roughness={0.25} metalness={0.2} side={THREE.DoubleSide} />
     </mesh>
@@ -79,7 +118,7 @@ function Rotor() {
 
   const [velSpring, velApi] = useSpring(() => ({
     vel: BASE_SPEED,
-    config: { mass: 1.2, tension: 38, friction: 15 },
+    config: { mass: 2.8, tension: 22, friction: 18 },
   }))
 
   useFrame((_, delta) => {
@@ -114,14 +153,19 @@ function Rotor() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (e: any) => {
       e.stopPropagation()
-      isDragging.current = true
-      velApi.stop()
+      // Record start state but don't stop the spring yet — wait for actual movement
       prevAngle.current = getAngle(e.nativeEvent.clientX, e.nativeEvent.clientY)
       prevTime.current = performance.now()
+      dragVel.current = velSpring.vel.get()
       gl.domElement.style.cursor = 'grabbing'
 
       const onMove = (ev: PointerEvent) => {
-        if (!isDragging.current || !groupRef.current) return
+        if (!groupRef.current) return
+        // Engage drag on first real movement
+        if (!isDragging.current) {
+          isDragging.current = true
+          velApi.stop()
+        }
         const now = performance.now()
         const dt = (now - prevTime.current) / 1000
         const angle = getAngle(ev.clientX, ev.clientY)
@@ -130,19 +174,23 @@ function Rotor() {
         if (dA > Math.PI) dA -= 2 * Math.PI
         if (dA < -Math.PI) dA += 2 * Math.PI
 
-        groupRef.current.rotation.z += dA
-        if (dt > 0.001) dragVel.current = dA / dt
+        // Clockwise only — discard any counter-clockwise delta
+        const cwDA = Math.min(0, dA)
+        groupRef.current.rotation.z += cwDA
+        if (dt > 0.001) dragVel.current = Math.min(0, cwDA / dt)
 
         prevAngle.current = angle
         prevTime.current = now
       }
 
       const onUp = () => {
-        isDragging.current = false
-        velApi.start({
-          from: { vel: Math.max(-8, Math.min(8, dragVel.current)) },
-          vel: BASE_SPEED,
-        })
+        if (isDragging.current) {
+          isDragging.current = false
+          velApi.start({
+            from: { vel: Math.max(-20, Math.min(0, dragVel.current)) },
+            vel: BASE_SPEED,
+          })
+        }
         gl.domElement.style.cursor = 'grab'
         window.removeEventListener('pointermove', onMove)
         window.removeEventListener('pointerup', onUp)
@@ -151,7 +199,7 @@ function Rotor() {
       window.addEventListener('pointermove', onMove)
       window.addEventListener('pointerup', onUp)
     },
-    [getAngle, gl, velApi]
+    [getAngle, gl, velApi, velSpring]
   )
 
   const bladeAngles = useMemo(
@@ -166,8 +214,9 @@ function Rotor() {
       onPointerEnter={() => { gl.domElement.style.cursor = 'grab' }}
       onPointerLeave={() => { if (!isDragging.current) gl.domElement.style.cursor = 'auto' }}
     >
-      <mesh castShadow>
-        <sphereGeometry args={[0.22, 10, 8]} />
+      {/* Hub — football shape elongated along the z axle */}
+      <mesh castShadow scale={[0.22, 0.22, 0.48]}>
+        <sphereGeometry args={[1, 20, 14]} />
         <meshStandardMaterial color="#d5d9de" roughness={0.45} metalness={0.15} />
       </mesh>
       {bladeAngles.map((angle, i) => (
@@ -196,19 +245,10 @@ function WindTurbine() {
         <meshStandardMaterial color="#b8bcc0" roughness={0.9} metalness={0.05} />
       </mesh>
 
-      <mesh position={[0, nacY, 0]} castShadow>
-        <boxGeometry args={[0.72, 0.6, 1.65]} />
-        <meshStandardMaterial color="#d5d9de" roughness={0.72} metalness={0.12} />
-      </mesh>
-
-      <mesh position={[0, nacY + 0.37, -0.1]} castShadow>
-        <boxGeometry args={[0.5, 0.12, 1.0]} />
-        <meshStandardMaterial color="#cdd0d4" roughness={0.8} metalness={0.08} />
-      </mesh>
-
-      <mesh position={[0, nacY, 0.92]} rotation={[-Math.PI / 2, 0, 0]} castShadow>
-        <coneGeometry args={[0.23, 0.5, 10]} />
-        <meshStandardMaterial color="#dde1e6" roughness={0.4} metalness={0.15} />
+      {/* Nacelle — football/prolate-spheroid, elongated along z */}
+      <mesh position={[0, nacY, -0.1]} castShadow scale={[0.38, 0.30, 0.92]}>
+        <sphereGeometry args={[1, 32, 20]} />
+        <meshStandardMaterial color="#d5d9de" roughness={0.65} metalness={0.14} />
       </mesh>
 
       <group position={[0, nacY, 0.74]}>
@@ -394,25 +434,25 @@ function Houses() {
     const rand = seededRand(42)
     const pts: HousePos[] = []
 
-    // 5 rows climbing the front face of the hill (wz -20 → -44)
-    // Hill peak: wx≈4, wz≈-38 — spread narrows as rows climb toward peak
-    for (let row = 0; row < 5; row++) {
-      const t = row / 4                        // 0 = base of slope, 1 = near peak
-      const baseZ = -20 - t * 24            // wz: -20 (base) → -44 (near peak)
-      const halfSpan = 16 - t * 5              // half-width: 16 → 11 (narrows up the hill)
-      const centerX = 4                       // follow hill's X center
-      const colCount = 7 + Math.floor(rand() * 4)
+    // 4 rows on the mid front face of the hill (wz -6 → -19)
+    // Tighter band, smaller scale — below the hilltop cluster
+    for (let row = 0; row < 4; row++) {
+      const t = row / 3                        // 0 = lower, 1 = upper
+      const baseZ = -6 - t * 8              // wz: -6 → -14
+      const halfSpan = 10 - t * 3              // half-width: 10 → 7
+      const centerX = -2
+      const colCount = 6 + Math.floor(rand() * 3)
 
       for (let col = 0; col < colCount; col++) {
         const wx = (centerX - halfSpan) + (2 * halfSpan) * (col / Math.max(colCount - 1, 1)) + (rand() - 0.5) * 2
-        const wz = baseZ + (rand() - 0.5) * 3
+        const wz = baseZ + (rand() - 0.5) * 2.5
         const ht = terrainHeight(wx, wz)
 
-        if (ht < 3) continue   // must be on the hill proper
+        if (ht < 1.1) continue
 
         pts.push({
           wx, wz,
-          scale: 0.85 + rand() * 0.3,
+          scale: 0.7 + rand() * 0.3,
           ry: rand() * Math.PI * 2,
           model: HOUSE_MODELS[Math.floor(rand() * HOUSE_MODELS.length)],
         })
@@ -424,6 +464,104 @@ function Houses() {
   return (
     <Suspense fallback={null}>
       {positions.map((pos, i) => <HouseInstance key={i} {...pos} />)}
+    </Suspense>
+  )
+}
+
+// ── Trees ─────────────────────────────────────────────────────────────────────
+
+const TREE_MODEL = '/models/tree.glb'
+useGLTF.preload(TREE_MODEL)
+
+const GREEN_TREE_NAMES = [
+  'Lowpolytree_01_green',
+  'Lowpolytree_02_green',
+  'Lowpolytree_03_green',
+  'Lowpolytree_4_green',
+  'Lowpolytree_5_green',
+  'Lowpolytree_6_green',
+]
+
+const TARGET_TREE_HEIGHT = 3.2
+
+interface TreePos { wx: number; wz: number; scale: number; ry: number; variant: number }
+
+function TreeInstance({ wx, wz, scale, ry, variant }: TreePos) {
+  const { scene } = useGLTF(TREE_MODEL)
+  const { clone, finalScale, yOffset } = useMemo(() => {
+    const targetName = GREEN_TREE_NAMES[variant % GREEN_TREE_NAMES.length]
+
+    // Clone the full scene so hierarchy and materials are intact
+    const clone = scene.clone(true)
+
+    // Hide all non-target color variants
+    clone.traverse((obj) => {
+      const n = obj.name
+      if (!n) return
+      const isNonGreen = n.includes('_blue') || n.includes('_orange') || n.includes('_yellow') || n.includes('Pine')
+      const isWrongGreen = GREEN_TREE_NAMES.some(g => g !== targetName && n.startsWith(g))
+      if (isNonGreen || isWrongGreen) obj.visible = false
+    })
+
+    // Compute bounding box from the target node's meshes with correct world transforms
+    clone.updateWorldMatrix(false, true)
+    const targetNode = clone.getObjectByName(targetName)
+    const box = new THREE.Box3()
+    if (targetNode) {
+      targetNode.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) box.expandByObject(child)
+      })
+    } else {
+      box.setFromObject(clone)
+    }
+
+    const height = box.getSize(new THREE.Vector3()).y
+    const normalizedScale = height > 0 ? (TARGET_TREE_HEIGHT / height) * scale : scale
+    const yOffset = height > 0 ? -box.min.y * normalizedScale : 0
+    return { clone, finalScale: normalizedScale, yOffset }
+  }, [scene, scale, variant])
+
+  return (
+    <primitive
+      object={clone}
+      position={[wx, -4 + terrainHeight(wx, wz) + yOffset, wz]}
+      rotation={[0, ry, 0]}
+      scale={finalScale}
+      castShadow
+      receiveShadow
+    />
+  )
+}
+
+function Trees() {
+  const positions = useMemo<TreePos[]>(() => {
+    const rand = seededRand(77)
+    const pts: TreePos[] = []
+
+    // Upper-boundary band: wz -10 to -14
+    const bandCount = 14
+    for (let i = 0; i < bandCount; i++) {
+      const wx = (-2 - 11) + (22 * (i / (bandCount - 1))) + (rand() - 0.5) * 2.5
+      const wz = -10 - rand() * 4      // spread across -10 → -14
+      const ht = terrainHeight(wx, wz)
+      if (ht < 1.5) continue
+      pts.push({ wx, wz, scale: 0.8 + rand() * 0.4, ry: rand() * Math.PI * 2, variant: Math.floor(rand() * GREEN_TREE_NAMES.length) })
+    }
+
+    // Hilltop cluster: tight ring near peak (wx≈4, wz≈-38)
+    const hilltopCount = 5
+    for (let i = 0; i < hilltopCount; i++) {
+      const wx = 2 + (rand() - 0.5) * .5
+      const wz = -40 - rand() * 1
+      pts.push({ wx, wz, scale: 0.9 + rand() * 0.3, ry: rand() * Math.PI * 2, variant: Math.floor(rand() * GREEN_TREE_NAMES.length) })
+    }
+
+    return pts
+  }, [])
+
+  return (
+    <Suspense fallback={null}>
+      {positions.map((pos, i) => <TreeInstance key={i} {...pos} />)}
     </Suspense>
   )
 }
@@ -645,6 +783,7 @@ export default function TurbineScene() {
       <Ground />
       <FluffyGrassField />
       <Houses />
+      <Trees />
       <Clouds />
       <WindGusts />
     </Canvas>
