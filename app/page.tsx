@@ -1,5 +1,6 @@
 import dynamic from 'next/dynamic'
 import { Folders } from './components/Folders'
+import { WhoAreWeButton } from './components/WhoAreWeButton'
 import { getHousemates, getHappenings } from './lib/notion'
 
 const TurbineScene = dynamic(() => import('./components/TurbineScene'))
@@ -34,8 +35,7 @@ export default async function Home() {
             <hr className="w-full border-white/20 " />
           </h1>
           <aside className='text-right mx-6 align-baseline h-fit font-ivy-displaycoo'>
-            <h3>Who are we? <hr /></h3>
-
+            <h3><WhoAreWeButton /> <hr /></h3>
           </aside>
         </div>
 

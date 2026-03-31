@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useMemo, useCallback } from 'react'
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import type { Housemate, Happening } from '../lib/notion'
 import { useDialog } from '@/lib/providers/dialog-provider'
 import { ContentViewer, type ViewableItem } from './ContentViewer'
@@ -365,14 +365,22 @@ interface FolderProps {
   initialX: number
   initialY: number
   contents: ContentItem[]
+  forceOpen?: boolean
 }
 
 const W = 72, H = 62
 
-function Folder({ label, initialX, initialY, contents }: FolderProps) {
+function Folder({ label, initialX, initialY, contents, forceOpen }: FolderProps) {
   const [pos, setPos] = useState({ x: initialX, y: initialY })
   const [open, setOpen] = useState(false)
   const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    if (forceOpen && !open) {
+      setOpen(true)
+      requestAnimationFrame(() => requestAnimationFrame(() => setVisible(true)))
+    }
+  }, [forceOpen]) // eslint-disable-line react-hooks/exhaustive-deps
   const drag = useRef<{ ox: number; oy: number } | null>(null)
   const moved = useRef(false)
   const openContent = useOpenContent()
@@ -521,6 +529,13 @@ function StandaloneLeaf({ item, initialX, initialY, onOpen }: {
 export function Folders({ housemates, happenings }: { housemates: Housemate[]; happenings: Happening[] }) {
   const openContent = useOpenContent()
   const looseViewable = useMemo(() => LOOSE_ITEMS.map(l => l.item), [])
+  const [openPeople, setOpenPeople] = useState(false)
+
+  useEffect(() => {
+    const handler = () => { setOpenPeople(true); setTimeout(() => setOpenPeople(false), 0) }
+    window.addEventListener('open-people-folder', handler)
+    return () => window.removeEventListener('open-people-folder', handler)
+  }, [])
 
   const folders = useMemo(() => FOLDERS.map(f => {
     if (f.label === 'PEOPLE') {
@@ -554,6 +569,7 @@ export function Folders({ housemates, happenings }: { housemates: Housemate[]; h
           contents={f.contents}
           initialX={INITIAL_POSITIONS[i].x}
           initialY={INITIAL_POSITIONS[i].y}
+          forceOpen={f.label === 'PEOPLE' ? openPeople : undefined}
         />
       ))}
       {LOOSE_ITEMS.map(({ item, x, y }) => (
