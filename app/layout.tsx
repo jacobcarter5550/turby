@@ -7,8 +7,17 @@ import ProviderProvider from "@/lib/ProviderProvider";
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
-  title: "Turby",
+  title: "Turbine.site",
   description: "Wind turbine landing page",
+  openGraph: {
+    title: "Turbine.site",
+    images: [{ url: "/ogImage.png" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Turbine.site",
+    images: ["/ogImage.png"],
+  },
 };
 
 export default function RootLayout({
