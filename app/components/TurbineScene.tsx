@@ -1,8 +1,8 @@
 'use client'
 
-import { useRef, useMemo, useCallback, useEffect, Suspense } from 'react'
+import { useRef, useMemo, useCallback, useEffect, useState, Suspense } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { useGLTF, Line } from '@react-three/drei'
+import { useGLTF, Line, Stars } from '@react-three/drei'
 import { useSpring } from '@react-spring/three'
 import * as THREE from 'three'
 import { GrassMaterial } from './GrassMaterial'
@@ -260,12 +260,18 @@ function WindTurbine() {
 
 // ── Sky ───────────────────────────────────────────────────────────────────────
 
-function GradientSky() {
-  const mat = useMemo(() => new THREE.ShaderMaterial({
+function GradientSky({ isRainy, isNight }: { isRainy: boolean; isNight: boolean }) {
+  const mat = useMemo(() => {
+    const [top, mid, bot] = isNight
+      ? ['#0a0e2a', '#111833', '#1a0a30']
+      : isRainy
+        ? ['#5a6070', '#7a8898', '#6a7a88']
+        : ['#CCEDFF', '#9BD7EE', '#09D6FF']
+    return new THREE.ShaderMaterial({
     uniforms: {
-      topColor:    { value: new THREE.Color('#CCEDFF') },
-      midColor:    { value: new THREE.Color('#9BD7EE') },
-      bottomColor: { value: new THREE.Color('#09D6FF') },
+      topColor:    { value: new THREE.Color(top) },
+      midColor:    { value: new THREE.Color(mid) },
+      bottomColor: { value: new THREE.Color(bot) },
     },
     vertexShader: `
       varying vec3 vWorldPos;
@@ -289,7 +295,8 @@ function GradientSky() {
     `,
     side: THREE.BackSide,
     depthWrite: false,
-  }), [])
+  })
+  }, [isRainy, isNight])
 
   return (
     <mesh scale={400} renderOrder={-1}>
@@ -301,7 +308,7 @@ function GradientSky() {
 
 // ── Ground ────────────────────────────────────────────────────────────────────
 
-function Ground() {
+function Ground({ isRainy, isNight }: { isRainy: boolean; isNight: boolean }) {
   const ref = useRef<THREE.Mesh>(null)
   useEffect(() => {
     if (!ref.current) return
@@ -313,10 +320,11 @@ function Ground() {
     pos.needsUpdate = true
     geo.computeVertexNormals()
   }, [])
+  const groundColor = isNight ? '#4a6a2a' : isRainy ? '#2a3d14' : '#3a5a1a'
   return (
     <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} position={[0, -4, 0]} receiveShadow>
       <planeGeometry args={[160, 160, 100, 100]} />
-      <meshStandardMaterial color="#3a5a1a" roughness={1} />
+      <meshStandardMaterial color={groundColor} roughness={1} />
     </mesh>
   )
 }
@@ -571,16 +579,20 @@ function Trees() {
 // Sun direction — shared between Sky shader and shadow-casting light
 const SUN: [number, number, number] = [3, 10, 5]
 
-function Lights() {
+function Lights({ isRainy, isNight }: { isRainy: boolean; isNight: boolean }) {
+  const hemiSky    = isNight ? '#4a5880' : isRainy ? '#7a8898' : '#7ec8f0'
+  const hemiGround = isNight ? '#2a3828' : isRainy ? '#1e2818' : '#2a4820'
+  const hemiInt    = isNight ? 1.0       : isRainy ? 0.25      : 0.35
+  const dirColor   = isNight ? '#99aadd' : isRainy ? '#aab0b8' : '#fff5e0'
+  const dirInt     = isNight ? 1.1       : isRainy ? 0.6       : 2.2
+  const fillInt    = isNight ? 0.45      : isRainy ? 0.08      : 0.12
   return (
     <>
-      {/* Sky/ground hemisphere */}
-      <hemisphereLight args={['#7ec8f0', '#2a4820', 0.35]} />
-      {/* Hard sun — bright and directional */}
+      <hemisphereLight args={[hemiSky, hemiGround, hemiInt]} />
       <directionalLight
         position={SUN}
-        intensity={2.2}
-        color="#fff5e0"
+        intensity={dirInt}
+        color={dirColor}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -591,8 +603,7 @@ function Lights() {
         shadow-camera-top={20}
         shadow-camera-bottom={-20}
       />
-      {/* Soft sky fill from opposite side */}
-      <directionalLight position={[-5, 6, -8]} intensity={0.12} color="#88b8d8" />
+      <directionalLight position={[-5, 6, -8]} intensity={fillInt} color="#88b8d8" />
     </>
   )
 }
@@ -693,7 +704,7 @@ function WindGusts() {
 
 interface CloudProps { seed: number }
 
-function Cloud({ seed }: CloudProps) {
+function Cloud({ seed, isRainy }: CloudProps & { isRainy: boolean }) {
   const groupRef = useRef<THREE.Group>(null)
 
   const r = useMemo(() => (n: number) => {
@@ -712,14 +723,14 @@ function Cloud({ seed }: CloudProps) {
     }))
   }, [r])
 
-  // Starting position & drift
+  // Starting position & drift — lower altitude when rainy
   const init = useMemo(() => ({
     x:     (r(20) - 0.5) * 80,
-    y:     8 + r(21) * 10,
+    y:     isRainy ? (4 + r(21) * 5) : (8 + r(21) * 10),
     z:     (r(22) - 0.5) * 80,
     speed: 0.35 + r(23) * 0.45,
     range: 35 + r(24) * 30,
-  }), [r])
+  }), [r, isRainy])
 
   useFrame(({ clock }) => {
     if (!groupRef.current) return
@@ -734,11 +745,11 @@ function Cloud({ seed }: CloudProps) {
         <mesh key={i} position={[p.x, p.y, p.z]} castShadow>
           <sphereGeometry args={[p.s, 7, 5]} />
           <meshStandardMaterial
-            color="#f0f6ff"
+            color={isRainy ? '#8a9aaa' : '#f0f6ff'}
             roughness={1}
             metalness={0}
             transparent
-            opacity={0.88}
+            opacity={isRainy ? 0.95 : 0.88}
           />
         </mesh>
       ))}
@@ -746,13 +757,61 @@ function Cloud({ seed }: CloudProps) {
   )
 }
 
-function Clouds() {
+function Clouds({ isRainy }: { isRainy: boolean }) {
+  const count = isRainy ? 28 : 14
   return (
     <>
-      {Array.from({ length: 14 }, (_, i) => (
-        <Cloud key={i} seed={i + 1} />
+      {Array.from({ length: count }, (_, i) => (
+        <Cloud key={i} seed={i + 1} isRainy={isRainy} />
       ))}
     </>
+  )
+}
+
+// ── Rain ──────────────────────────────────────────────────────────────────────
+
+const RAIN_COUNT = 1500
+
+function Rain() {
+  const pointsRef = useRef<THREE.Points>(null)
+
+  const positions = useMemo(() => {
+    const arr = new Float32Array(RAIN_COUNT * 3)
+    for (let i = 0; i < RAIN_COUNT; i++) {
+      arr[i * 3 + 0] = (Math.random() - 0.5) * 80
+      arr[i * 3 + 1] = Math.random() * 30 - 4
+      arr[i * 3 + 2] = (Math.random() - 0.5) * 80
+    }
+    return arr
+  }, [])
+
+  const speeds = useMemo(() => {
+    const arr = new Float32Array(RAIN_COUNT)
+    for (let i = 0; i < RAIN_COUNT; i++) arr[i] = 12 + Math.random() * 8
+    return arr
+  }, [])
+
+  useFrame((_, delta) => {
+    if (!pointsRef.current) return
+    const pos = (pointsRef.current.geometry.attributes.position as THREE.BufferAttribute).array as Float32Array
+    for (let i = 0; i < RAIN_COUNT; i++) {
+      pos[i * 3 + 1] -= speeds[i] * delta
+      if (pos[i * 3 + 1] < -4) {
+        pos[i * 3 + 0] = (Math.random() - 0.5) * 80
+        pos[i * 3 + 1] = 26
+        pos[i * 3 + 2] = (Math.random() - 0.5) * 80
+      }
+    }
+    ;(pointsRef.current.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true
+  })
+
+  return (
+    <points ref={pointsRef}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+      </bufferGeometry>
+      <pointsMaterial color="#aac8e0" size={0.08} sizeAttenuation transparent opacity={0.6} depthWrite={false} />
+    </points>
   )
 }
 
@@ -767,6 +826,19 @@ function CameraSetup() {
 }
 
 export default function TurbineScene() {
+  const [{ isRainy, isNight }, setWeather] = useState({ isRainy: false, isNight: false })
+
+  useEffect(() => {
+    fetch('/api/weather')
+      .then(r => r.json())
+      .then(setWeather)
+      .catch(() => {})
+  }, [])
+
+  const fogColor = isNight ? '#06091a' : isRainy ? '#8a9aaa' : '#7ab8e8'
+  const fogNear  = isNight ? 30 : isRainy ? 20 : 35
+  const fogFar   = isNight ? 70 : isRainy ? 55 : 80
+
   return (
     <Canvas
       camera={{ position: [2.02, 4.18, 8.79], fov: 56 }}
@@ -776,16 +848,18 @@ export default function TurbineScene() {
       style={{ width: '100%', height: '100%' }}
     >
       <CameraSetup />
-      <GradientSky />
-      <fog attach="fog" args={['#7ab8e8', 35, 80]} />
-      <Lights />
+      <GradientSky isRainy={isRainy} isNight={isNight} />
+      <fog attach="fog" args={[fogColor, fogNear, fogFar]} />
+      <Lights isRainy={isRainy} isNight={isNight} />
       <WindTurbine />
-      <Ground />
+      <Ground isRainy={isRainy} isNight={isNight} />
       <FluffyGrassField />
       <Houses />
       <Trees />
-      <Clouds />
+      <Clouds isRainy={isRainy} />
       <WindGusts />
+      {isRainy && <Rain />}
+      {isNight && <Stars radius={80} depth={50} count={3000} factor={4} saturation={0} fade speed={0} />}
     </Canvas>
   )
 }
